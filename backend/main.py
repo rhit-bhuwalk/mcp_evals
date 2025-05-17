@@ -12,7 +12,6 @@ app = FastAPI(title="MCP-Eval")
 # ⬩ Request / response models
 # ──────────────────────────────────────────────────────────────────────────
 class EvalRequest(BaseModel):
-    install_cmd: str 
     package_name: str
     start_cmd: Optional[str] = None  # e.g. "node build/cli.js --port 3333"
     port: int | None = 3333
@@ -24,9 +23,6 @@ class EvalResponse(BaseModel):
     job_id: str
     score: dict      
 
-# ──────────────────────────────────────────────────────────────────────────
-# ⬩ Helper runners  (super-naïve for hackathon)
-# ──────────────────────────────────────────────────────────────────────────
 def run_security_scan(src: Path) -> int:
     """Language-agnostic security score 0-100."""
     crit = 0
@@ -34,7 +30,7 @@ def run_security_scan(src: Path) -> int:
     # 1) Semgrep for TS/JS/Py   (fast, multi-lang)
     sem_json = src / "semgrep.json"
     subprocess.run(
-        f"semgrep scan --config p/ci {src} --json --output {sem_json}",
+        f"semgrep scan --config p/ci --verbose {src} --json --output {sem_json}",
         shell=True, check=False
     )
     if sem_json.exists():
@@ -81,40 +77,82 @@ def run_runtime_test(port: int) -> int:
 # ⬩ Background evaluation task
 # ──────────────────────────────────────────────────────────────────────────
 def evaluate(req: EvalRequest, job_id: str, report_path: Path):
-    workdir = Path(tempfile.mkdtemp(prefix="mcp_"))
-    server  = None
-    try:
-        # 1. Download the package tarball
-        pkg = req.install_cmd.replace("npx ", "").strip()   # "mcp-fileserver@1.2.0" or "github:acme/repo"
-        subprocess.run(f"npm pack {pkg}", shell=True, check=True, cwd=workdir)
-        subprocess.run("tar -xzf *.tgz --strip-components=1", shell=True,
-                       check=True, cwd=workdir)
-        print("Package contents:")
-        for path in workdir.rglob("*"):
-            print("  ", path.relative_to(workdir))
-        print("─" * 40)
-        # 2. Start the server YOU control
-        start_cmd = req.start_cmd or f"node ./dist/index.js -p {req.port}"
-        server = subprocess.Popen(start_cmd, shell=True, cwd=workdir,
-                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        time.sleep(2) 
+    """
+    1. Download + unpack the package (npm or pip)
+    2. Launch the MCP server under our control
+    3. Run security / spec / runtime checks
+    4. Persist JSON report (or error) to report_path
+    """
+    workdir   = Path(tempfile.mkdtemp(prefix="mcp_"))
+    src_root  = workdir          # may change for Python wheels
+    server    = None
 
-        # 3. Scans (stubs)
-        security   = run_security_scan(workdir)
+    try:
+        # ── 1 ▸ fetch + unpack source code ────────────────────────────────
+        pkg_id   = req.package_name.strip()
+        is_py    = "==" in pkg_id or pkg_id.endswith((".whl", ".tar.gz"))
+
+        if is_py:
+            # Python: download wheel/sdist
+            subprocess.run(f"pip download --no-deps -d . {pkg_id}",
+                           shell=True, check=True, cwd=workdir)
+            for f in workdir.iterdir():
+                if f.suffix == ".whl":
+                    subprocess.run(f"python -m wheel unpack {f.name}",
+                                   shell=True, check=True, cwd=workdir)
+                elif f.suffix in {".gz", ".bz2"}:
+                    subprocess.run(f"tar -xzf {f.name}", shell=True,
+                                   check=True, cwd=workdir)
+            src_root = next(p for p in workdir.iterdir() if p.is_dir())
+        else:
+            # Node: npm pack tarball
+            subprocess.run(f"npm pack {pkg_id}", shell=True, check=True, cwd=workdir)
+            subprocess.run("tar -xzf *.tgz --strip-components=1",
+                           shell=True, check=True, cwd=workdir)
+
+        # ── 2 ▸ show file tree for debugging ──────────────────────────────
+        print("Package contents:")
+        for p in src_root.rglob("*"):
+            print("  ", p.relative_to(src_root))
+        print("─" * 40)
+
+        # ── 3 ▸ launch the server we’ll test ──────────────────────────────
+        start_cmd = req.start_cmd
+        if not start_cmd:
+            if is_py:
+                mod = pkg_id.split("==")[0].split("/")[-1].replace("-", "_")
+                start_cmd = f"python -m {mod} --port {req.port}"
+            else:
+                start_cmd = f"node ./dist/index.js -p {req.port}"
+
+        env = os.environ.copy()
+        if req.auth_env:
+            for kv in req.auth_env.split(","):
+                k, v = kv.split("=", 1)
+                env[k] = v
+
+        server = subprocess.Popen(start_cmd, shell=True, cwd=src_root, env=env,
+                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        time.sleep(3)   # give the server time to bind
+
+        # ── 4 ▸ run checks ────────────────────────────────────────────────
+        security   = run_security_scan(src_root)
         spec_score = run_spec_check(req.spec_url)
         runtime    = run_runtime_test(req.port)
 
-        total = round(0.4*security + 0.3*spec_score + 0.3*runtime)
+        total = round(0.4 * security + 0.3 * spec_score + 0.3 * runtime)
         report_path.write_text(json.dumps(
-            dict(security=security, spec=spec_score,
-                 runtime=runtime, total=total), indent=2))
+            {"security": security, "spec": spec_score,
+             "runtime": runtime, "total": total},
+            indent=2
+        ))
 
     except Exception as e:
         report_path.write_text(json.dumps({"error": str(e)}))
     finally:
-        if server: server.terminate()
+        if server:
+            server.terminate()
         shutil.rmtree(workdir, ignore_errors=True)
-
 # ──────────────────────────────────────────────────────────────────────────
 # ⬩ API endpoint
 # ──────────────────────────────────────────────────────────────────────────
