@@ -24,7 +24,7 @@ const Eval = () => {
         </span>
       </h2>
       <div className="flex flex-row space-x-8 w-full max-w-4xl">
-        <ScoreCard title="Security" score={data.score.security} index={0} />
+        <ScoreCard title="Security" score={data.security} index={0} />
         <ScoreCard title="Spec" score={data.score.spec} index={1} />
         <ScoreCard title="Runtime" score={data.score.runtime} index={2} />
       </div>

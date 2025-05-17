@@ -21,7 +21,7 @@ const Spinner = () => (
       <span className="text-lg font-semibold text-gray-700 mb-1">
         Evaluating
       </span>
-      <span className="flex">
+      <span className="flex text-lg">
         <span
           className="inline-block animate-bounce"
           style={{ animationDelay: "0ms" }}
@@ -65,10 +65,6 @@ const Landing = () => {
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({
     package_name: "",
-    start_cmd: "",
-    port: 3333,
-    spec_url: "",
-    auth_env: "",
   });
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -81,20 +77,15 @@ const Landing = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const formData = Object.entries(form).reduce<typeof form>(
-      (acc, [key, value]) => {
-        if (value !== "") {
-          acc[key as keyof typeof form] = value as never;
-        }
-        return acc;
-      },
-      {} as typeof form
-    );
     setLoading(true);
-    const response = await api.post("/eval", formData);
+    const response = await api.post("/eval", form);
     setLoading(false);
     navigate("/eval", {
-      state: { ...response.data, package_name: form.package_name },
+      state: {
+        ...response.data,
+        security: response.data.score,
+        package_name: form.package_name,
+      },
     });
   };
 
@@ -104,7 +95,7 @@ const Landing = () => {
         <Spinner key="spinner" />
       ) : (
         <motion.div
-          className="flex flex-col items-center justify-center min-h-screen"
+          className="flex flex-col items-center justify-center min-h-screen w-full max-w-3xl mx-auto px-4"
           initial="hidden"
           animate="visible"
         >
@@ -114,8 +105,14 @@ const Landing = () => {
           >
             MCP Eval
           </motion.h1>
+          <motion.p
+            className="text-xl text-gray-600 mb-8"
+            variants={fieldVariants}
+          >
+            Your go-to solution for evaluating and refining MCP servers
+          </motion.p>
           <motion.form
-            className="flex flex-col items-center space-y-4"
+            className="flex flex-col items-center space-y-4 w-full"
             onSubmit={handleSubmit}
             variants={formVariants}
             initial="hidden"
@@ -125,46 +122,10 @@ const Landing = () => {
               type="text"
               name="package_name"
               placeholder="Package Name"
-              className="p-2 text-lg w-full max-w-md border border-gray-300 rounded"
+              className="p-2 text-lg w-3/4 min-w-[300px] border border-gray-300 rounded"
               value={form.package_name}
               onChange={handleChange}
               required
-              variants={fieldVariants}
-            />
-            <motion.input
-              type="text"
-              name="start_cmd"
-              placeholder="Start Command"
-              className="p-2 text-lg w-full max-w-md border border-gray-300 rounded"
-              value={form.start_cmd}
-              onChange={handleChange}
-              variants={fieldVariants}
-            />
-            <motion.input
-              type="number"
-              name="port"
-              placeholder="Port (default: 3333)"
-              className="p-2 text-lg w-full max-w-md border border-gray-300 rounded"
-              value={form.port}
-              onChange={handleChange}
-              variants={fieldVariants}
-            />
-            <motion.input
-              type="text"
-              name="spec_url"
-              placeholder="Spec URL (optional)"
-              className="p-2 text-lg w-full max-w-md border border-gray-300 rounded"
-              value={form.spec_url}
-              onChange={handleChange}
-              variants={fieldVariants}
-            />
-            <motion.input
-              type="text"
-              name="auth_env"
-              placeholder="Auth Env (optional)"
-              className="p-2 text-lg w-full max-w-md border border-gray-300 rounded"
-              value={form.auth_env}
-              onChange={handleChange}
               variants={fieldVariants}
             />
             <motion.button
