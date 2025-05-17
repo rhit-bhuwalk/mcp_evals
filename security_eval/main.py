@@ -5,6 +5,8 @@ from uuid import uuid4
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 from typing import Optional
+import socket
+import requests
 
 app = FastAPI(title="MCP-Eval")
 
@@ -13,10 +15,6 @@ app = FastAPI(title="MCP-Eval")
 # ──────────────────────────────────────────────────────────────────────────
 class EvalRequest(BaseModel):
     package_name: str
-    start_cmd: Optional[str] = None  # e.g. "node build/cli.js --port 3333"
-    port: int | None = 3333
-    spec_url: Optional[str] = None
-    auth_env: Optional[str] = None
   
 
 class EvalResponse(BaseModel):
@@ -61,18 +59,6 @@ def run_security_scan(src: Path) -> int:
 
     return max(0, 100 - crit * 15)   # −15 pts per critical/high finding
 
-def run_spec_check(spec_url: str | None) -> int:
-    """Return dummy spec score."""
-    if not spec_url:
-        return 0
-    # TODO: call openapi-diff
-    return 90
-
-def run_runtime_test(port: int) -> int:
-    """Hit /list_tools and return 0-100."""
-    # TODO: use real MCP client; for now assume healthy.
-    return 95
-
 # ──────────────────────────────────────────────────────────────────────────
 # ⬩ Background evaluation task
 # ──────────────────────────────────────────────────────────────────────────
@@ -109,6 +95,8 @@ def evaluate(req: EvalRequest, job_id: str, report_path: Path):
             subprocess.run(f"npm pack {pkg_id}", shell=True, check=True, cwd=workdir)
             subprocess.run("tar -xzf *.tgz --strip-components=1",
                            shell=True, check=True, cwd=workdir)
+            subprocess.run("npm install --omit=dev --silent --ignore-scripts",
+               shell=True, check=True, cwd=workdir)
 
         # ── 2 ▸ show file tree for debugging ──────────────────────────────
         print("Package contents:")
@@ -116,41 +104,15 @@ def evaluate(req: EvalRequest, job_id: str, report_path: Path):
             print("  ", p.relative_to(src_root))
         print("─" * 40)
 
-        # ── 3 ▸ launch the server we’ll test ──────────────────────────────
-        start_cmd = req.start_cmd
-        if not start_cmd:
-            if is_py:
-                mod = pkg_id.split("==")[0].split("/")[-1].replace("-", "_")
-                start_cmd = f"python -m {mod} --port {req.port}"
-            else:
-                start_cmd = f"node ./dist/index.js -p {req.port}"
-
-        env = os.environ.copy()
-        if req.auth_env:
-            for kv in req.auth_env.split(","):
-                k, v = kv.split("=", 1)
-                env[k] = v
-
-        server = subprocess.Popen(start_cmd, shell=True, cwd=src_root, env=env,
-                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        time.sleep(3)   # give the server time to bind
-
-        # ── 4 ▸ run checks ────────────────────────────────────────────────
         security   = run_security_scan(src_root)
-        spec_score = run_spec_check(req.spec_url)
-        runtime    = run_runtime_test(req.port)
-
-        total = round(0.4 * security + 0.3 * spec_score + 0.3 * runtime)
-        report_path.write_text(json.dumps(
-            {"security": security, "spec": spec_score,
-             "runtime": runtime, "total": total},
-            indent=2
-        ))
+        return security
 
     except Exception as e:
         report_path.write_text(json.dumps({"error": str(e)}))
     finally:
         if server:
+            print("Workdir was:", workdir)      # see the actual path
+            input("Press Enter after you’ve looked around…")
             server.terminate()
         shutil.rmtree(workdir, ignore_errors=True)
 # ──────────────────────────────────────────────────────────────────────────
