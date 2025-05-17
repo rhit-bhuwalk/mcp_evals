@@ -1,7 +1,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { ChildProcess, spawn } from 'child_process';
-import { ConfigLoader } from './ConfigLoader';
+import { ConfigLoader, DEFAULT_CONFIG_FILENAME } from './ConfigLoader';
 import { ToolResponse } from '../types';
 
 /**
@@ -10,121 +10,82 @@ import { ToolResponse } from '../types';
 export class MCPClient {
   private client: Client | null = null;
   private serverProcess: ChildProcess | null = null;
-  private configLoader: ConfigLoader = new ConfigLoader();
-  
+  private configLoader = new ConfigLoader();
+
   /**
    * Connect to an MCP server
-   * @param serverPathOrName Server path or named configuration
-   * @param configPath Optional path to config file
+   * @param serverName Name of the server as defined in config
+   * @param configPath Optional override path to the config file
    */
-  async connect(serverPathOrName: string, configPath?: string): Promise<void> {
-    console.log(`Connecting to MCP server: ${serverPathOrName}`);
-    
-    if (configPath) {
-      this.configLoader.loadConfig(configPath);
+  async connect(serverName: string, configPath?: string): Promise<void> {
+    // Load configuration (either custom path or default)
+    const fileToLoad = configPath || DEFAULT_CONFIG_FILENAME;
+    this.configLoader.loadConfig(fileToLoad);
+    console.log(`Loaded config from: ${fileToLoad}`);
+
+    // Lookup server settings
+    const serverConfig = this.configLoader.getServerConfig(serverName);
+    if (!serverConfig) {
+      throw new Error(`Server not found in configuration: ${serverName}`);
     }
-    
-    // Check if this is a server name from our configuration
-    const serverConfig = this.configLoader.getServerConfig(serverPathOrName);
-    
-    if (serverConfig) {
-      // This is a configured server, spawn it
-      console.log(`Starting server process: ${serverConfig.command} ${serverConfig.args.join(' ')}`);
-      
-      // Set up environment variables
-      const env = {
-        ...process.env,
-        ...serverConfig.env
-      };
-      
-      this.serverProcess = spawn(serverConfig.command, serverConfig.args, { 
-        env,
-        stdio: ['pipe', 'pipe', 'pipe']
-      });
-      
-      // Handle stderr output
-      if (this.serverProcess.stderr) {
-        this.serverProcess.stderr.on('data', (data: Buffer) => {
-          console.error(`Server stderr: ${data.toString()}`);
-        });
-      }
-      
-      // Create transport using the command
-      const transport = new StdioClientTransport({
-        command: serverConfig.command,
-        args: serverConfig.args
-      });
-      
-      // Create client
-      this.client = new Client(
-        {
-          name: "mcp-server-tester",
-          version: "0.0.1"
-        },
-        {
-          capabilities: {
-            tools: {}
-          }
-        }
-      );
-      
-      // Connect to the transport
-      await this.client.connect(transport);
-      
-      // Wait for server to initialize
-      await new Promise(resolve => setTimeout(resolve, 500));
-    } else {
-      throw new Error(`Server not found in configuration: ${serverPathOrName}`);
-    }
+
+    const { command, args = [], env: serverEnv = {} } = serverConfig;
+    console.log(`Starting server process: ${command} ${args.join(' ')}`);
+
+    // Spawn the MCP server process
+    this.serverProcess = spawn(command, args, {
+      env: { ...process.env, ...serverEnv },
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
+
+    // Log any stderr from the server
+    this.serverProcess.stderr?.on('data', (chunk: Buffer) => {
+      console.error(`[${serverName} stderr] ${chunk.toString().trim()}`);
+    });
+
+    // Create transport and client
+    const transport = new StdioClientTransport({ command, args });
+    this.client = new Client(
+      { name: 'mcp-server-tester', version: '0.0.1' },
+      { capabilities: { tools: {} } }
+    );
+    await this.client.connect(transport);
+
+    // Give the server a moment to finish startup
+    await new Promise(resolve => setTimeout(resolve, 500));
   }
-  
+
   /**
-   * List all available tools
-   * @returns Array of tool definitions
+   * List all available tools on the connected server
    */
   async listTools(): Promise<any[]> {
     if (!this.client) {
       throw new Error('Not connected to an MCP server');
     }
-    
-    const toolsResult = await this.client.listTools();
-    return toolsResult.tools || [];
+    const { tools = [] } = await this.client.listTools();
+    return tools;
   }
-  
+
   /**
-   * Execute a tool
-   * @param name Tool name
-   * @param params Tool parameters
-   * @returns Tool response
+   * Execute a tool by name with given parameters
    */
   async executeTool(name: string, params: Record<string, any>): Promise<ToolResponse> {
     if (!this.client) {
       throw new Error('Not connected to an MCP server');
     }
-    
     try {
-      const response = await this.client.callTool({
-        name,
-        arguments: params
-      });
-      
-      return {
-        status: 'success',
-        data: response
-      };
+      const response = await this.client.callTool({ name, arguments: params });
+      return { status: 'success', data: response };
     } catch (error: any) {
       return {
         status: 'error',
-        error: {
-          message: error.message || 'Unknown error',
-          code: error.code
-        }
+        error: { message: error.message || 'Unknown error', code: error.code }
       };
     }
   }
-  
+
   /**
-   * Disconnect from the server
+   * Disconnect from the server and clean up the process
    */
   async disconnect(): Promise<void> {
     if (this.serverProcess) {
@@ -132,15 +93,13 @@ export class MCPClient {
       this.serverProcess.kill();
       this.serverProcess = null;
     }
-    
     this.client = null;
   }
-  
+
   /**
-   * List all configured servers
-   * @returns Array of server names
+   * Get a list of all configured server names
    */
   listConfiguredServers(): string[] {
     return this.configLoader.getServerNames();
   }
-} 
+}

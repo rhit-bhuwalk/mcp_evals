@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MCP Server Tester</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            padding-top: 2rem;
+            padding-bottom: 2rem;
+        }
+        .server-card {
+            margin-bottom: 1rem;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .server-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        pre {
+            background-color: #f8f9fa;
+            padding: 1rem;
+            border-radius: 0.25rem;
+        }
+        .tool-item {
+            padding: 0.5rem;
+            border-bottom: 1px solid #dee2e6;
+        }
+        .tool-item:last-child {
+            border-bottom: none;
+        }
+        .loading {
+            display: inline-block;
+            width: 1.5rem;
+            height: 1.5rem;
+            border: 3px solid rgba(0, 0, 0, 0.1);
+            border-radius: 50%;
+            border-top-color: #007bff;
+            animation: spin 1s ease-in-out infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="pb-3 mb-4 border-bottom">
+            <h1 class="fs-4">MCP Server Tester</h1>
+        </header>
+
+        <div class="row mb-4">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header">
+                        Available MCP Servers
+                    </div>
+                    <div class="card-body" id="server-list">
+                        <div class="d-flex justify-content-center">
+                            <div class="loading"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mb-4" id="server-details-container" style="display: none;">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header" id="server-details-title">
+                        Server Details
+                    </div>
+                    <div class="card-body">
+                        <pre id="server-details"></pre>
+                        <div class="d-grid gap-2 d-md-flex justify-content-md-end mt-3">
+                            <button class="btn btn-primary" id="list-tools-btn">List Tools</button>
+                            <button class="btn btn-success" id="run-tests-btn">Run Tests</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mb-4" id="tools-container" style="display: none;">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header" id="tools-title">
+                        Available Tools
+                    </div>
+                    <div class="card-body">
+                        <div id="tools-list"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mb-4" id="test-results-container" style="display: none;">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header" id="test-results-title">
+                        Test Results
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <div class="card bg-light">
+                                        <div class="card-body">
+                                            <h5 class="card-title">Total Tests</h5>
+                                            <p class="card-text fs-1 fw-bold text-center" id="test-count">0</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="card bg-success text-white">
+                                        <div class="card-body">
+                                            <h5 class="card-title">Passed</h5>
+                                            <p class="card-text fs-1 fw-bold text-center" id="pass-count">0</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="card bg-danger text-white">
+                                        <div class="card-body">
+                                            <h5 class="card-title">Failed</h5>
+                                            <p class="card-text fs-1 fw-bold text-center" id="fail-count">0</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <pre id="test-results"></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="modal fade" id="toolModal" tabindex="-1" aria-labelledby="toolModalLabel" aria-hidden="true">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="toolModalLabel">Execute Tool</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <form id="execute-tool-form">
+                            <div class="mb-3">
+                                <label for="tool-inputs" class="form-label">Tool Inputs (JSON):</label>
+                                <textarea class="form-control" id="tool-inputs" rows="5"></textarea>
+                            </div>
+                        </form>
+                        <div id="tool-response-container" style="display: none;">
+                            <h6>Tool Response:</h6>
+                            <pre id="tool-response"></pre>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                        <button type="button" class="btn btn-primary" id="execute-tool-btn">Execute</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Global variables
+        let currentServer = null;
+        let toolModal = null;
+        let currentTool = null;
+
+        // Initialize the page
+        document.addEventListener('DOMContentLoaded', function() {
+            fetchServers();
+            toolModal = new bootstrap.Modal(document.getElementById('toolModal'));
+            
+            // Add event listeners
+            document.getElementById('list-tools-btn').addEventListener('click', function() {
+                fetchTools(currentServer);
+            });
+            
+            document.getElementById('run-tests-btn').addEventListener('click', function() {
+                runTests(currentServer);
+            });
+            
+            document.getElementById('execute-tool-btn').addEventListener('click', function() {
+                executeTool(currentServer, currentTool);
+            });
+        });
+
+        // Fetch available servers
+        function fetchServers() {
+            fetch('/api/servers')
+                .then(response => response.json())
+                .then(data => {
+                    const serverList = document.getElementById('server-list');
+                    serverList.innerHTML = '';
+                    
+                    if (data.status === 'success') {
+                        if (data.servers && data.servers.length > 0) {
+                            const row = document.createElement('div');
+                            row.className = 'row';
+                            
+                            data.servers.forEach(server => {
+                                const col = document.createElement('div');
+                                col.className = 'col-md-4';
+                                
+                                const card = document.createElement('div');
+                                card.className = 'card server-card';
+                                card.addEventListener('click', function() {
+                                    selectServer(server);
+                                });
+                                
+                                const cardBody = document.createElement('div');
+                                cardBody.className = 'card-body';
+                                
+                                const title = document.createElement('h5');
+                                title.className = 'card-title';
+                                title.textContent = server;
+                                
+                                cardBody.appendChild(title);
+                                card.appendChild(cardBody);
+                                col.appendChild(card);
+                                row.appendChild(col);
+                            });
+                            
+                            serverList.appendChild(row);
+                        } else {
+                            serverList.innerHTML = '<div class="alert alert-warning">No MCP servers found in configuration.</div>';
+                        }
+                    } else {
+                        serverList.innerHTML = '<div class="alert alert-danger">Failed to load servers: ' + (data.message || 'Unknown error') + '</div>';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching servers:', error);
+                    const serverList = document.getElementById('server-list');
+                    serverList.innerHTML = '<div class="alert alert-danger">Failed to fetch servers: ' + error.message + '</div>';
+                });
+        }
+
+        // Select a server
+        function selectServer(server) {
+            currentServer = server;
+            
+            // Update UI
+            document.getElementById('server-details-container').style.display = 'block';
+            document.getElementById('server-details-title').textContent = 'Server: ' + server;
+            document.getElementById('server-details').textContent = 'Loading...';
+            
+            // Hide other sections
+            document.getElementById('tools-container').style.display = 'none';
+            document.getElementById('test-results-container').style.display = 'none';
+            
+            // Fetch server details
+            fetch('/api/servers/' + server)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        document.getElementById('server-details').textContent = JSON.stringify(data.server, null, 2);
+                    } else {
+                        document.getElementById('server-details').textContent = 'Error: ' + (data.message || 'Unknown error');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching server details:', error);
+                    document.getElementById('server-details').textContent = 'Error: ' + error.message;
+                });
+        }
+
+        // Fetch tools for a server
+        function fetchTools(server) {
+            // Update UI
+            document.getElementById('tools-container').style.display = 'block';
+            document.getElementById('tools-title').textContent = 'Tools for: ' + server;
+            document.getElementById('tools-list').innerHTML = '<div class="d-flex justify-content-center"><div class="loading"></div></div>';
+            
+            // Fetch tools
+            fetch('/api/servers/' + server + '/tools')
+                .then(response => response.json())
+                .then(data => {
+                    const toolsList = document.getElementById('tools-list');
+                    toolsList.innerHTML = '';
+                    
+                    if (data.status === 'success') {
+                        if (data.tools && data.tools.length > 0) {
+                            data.tools.forEach(tool => {
+                                const toolItem = document.createElement('div');
+                                toolItem.className = 'tool-item';
+                                
+                                const toolHeader = document.createElement('div');
+                                toolHeader.className = 'd-flex justify-content-between align-items-center';
+                                
+                                const toolName = document.createElement('h5');
+                                toolName.textContent = tool.name;
+                                
+                                const executeBtn = document.createElement('button');
+                                executeBtn.className = 'btn btn-sm btn-outline-primary';
+                                executeBtn.textContent = 'Execute';
+                                executeBtn.addEventListener('click', function() {
+                                    openToolModal(tool);
+                                });
+                                
+                                toolHeader.appendChild(toolName);
+                                toolHeader.appendChild(executeBtn);
+                                
+                                const toolDescription = document.createElement('p');
+                                toolDescription.textContent = tool.description || 'No description available';
+                                
+                                const toolSchema = document.createElement('pre');
+                                toolSchema.className = 'mt-2 mb-0';
+                                toolSchema.style.fontSize = '0.8rem';
+                                toolSchema.textContent = JSON.stringify(tool.inputSchema, null, 2);
+                                
+                                toolItem.appendChild(toolHeader);
+                                toolItem.appendChild(toolDescription);
+                                toolItem.appendChild(toolSchema);
+                                toolsList.appendChild(toolItem);
+                            });
+                        } else {
+                            toolsList.innerHTML = '<div class="alert alert-warning">No tools found for this server.</div>';
+                        }
+                    } else {
+                        toolsList.innerHTML = '<div class="alert alert-danger">Failed to load tools: ' + (data.message || 'Unknown error') + '</div>';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching tools:', error);
+                    document.getElementById('tools-list').innerHTML = '<div class="alert alert-danger">Failed to fetch tools: ' + error.message + '</div>';
+                });
+        }
+
+        // Open tool execution modal
+        function openToolModal(tool) {
+            currentTool = tool.name;
+            document.getElementById('toolModalLabel').textContent = 'Execute Tool: ' + tool.name;
+            document.getElementById('tool-inputs').value = '{}';
+            document.getElementById('tool-response-container').style.display = 'none';
+            toolModal.show();
+        }
+
+        // Execute a tool
+        function executeTool(server, toolName) {
+            // Get inputs
+            let inputs = {};
+            try {
+                inputs = JSON.parse(document.getElementById('tool-inputs').value);
+            } catch (error) {
+                alert('Invalid JSON input: ' + error.message);
+                return;
+            }
+            
+            // Disable execute button
+            const executeBtn = document.getElementById('execute-tool-btn');
+            const originalText = executeBtn.textContent;
+            executeBtn.disabled = true;
+            executeBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Executing...';
+            
+            // Execute tool
+            fetch('/api/servers/' + server + '/tools/' + toolName + '/execute', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(inputs)
+            })
+                .then(response => response.json())
+                .then(data => {
+                    // Show response
+                    document.getElementById('tool-response-container').style.display = 'block';
+                    document.getElementById('tool-response').textContent = JSON.stringify(data, null, 2);
+                })
+                .catch(error => {
+                    console.error('Error executing tool:', error);
+                    document.getElementById('tool-response-container').style.display = 'block';
+                    document.getElementById('tool-response').textContent = 'Error: ' + error.message;
+                })
+                .finally(() => {
+                    // Re-enable execute button
+                    executeBtn.disabled = false;
+                    executeBtn.textContent = originalText;
+                });
+        }
+
+        // Run tests for a server
+        function runTests(server) {
+            // Update UI
+            document.getElementById('test-results-container').style.display = 'block';
+            document.getElementById('test-results-title').textContent = 'Test Results for: ' + server;
+            document.getElementById('test-results').textContent = 'Running tests...';
+            
+            // Reset counters
+            document.getElementById('test-count').textContent = '0';
+            document.getElementById('pass-count').textContent = '0';
+            document.getElementById('fail-count').textContent = '0';
+            
+            // Disable run tests button
+            const runTestsBtn = document.getElementById('run-tests-btn');
+            const originalText = runTestsBtn.textContent;
+            runTestsBtn.disabled = true;
+            runTestsBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Running Tests...';
+            
+            // Run tests
+            fetch('/api/servers/' + server + '/test', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    numTestsPerTool: 2,  // Default to 2 tests per tool for quicker results
+                    timeoutMs: 10000
+                })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        // Update counters
+                        document.getElementById('test-count').textContent = data.testCount || '0';
+                        document.getElementById('pass-count').textContent = data.passCount || '0';
+                        document.getElementById('fail-count').textContent = data.failCount || '0';
+                        
+                        // Show results
+                        document.getElementById('test-results').textContent = JSON.stringify(data.results, null, 2);
+                    } else {
+                        document.getElementById('test-results').textContent = 'Error: ' + (data.message || 'Unknown error');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error running tests:', error);
+                    document.getElementById('test-results').textContent = 'Error: ' + error.message;
+                })
+                .finally(() => {
+                    // Re-enable run tests button
+                    runTestsBtn.disabled = false;
+                    runTestsBtn.textContent = originalText;
+                });
+        }
+    </script>
+</body>
+</html> 
