@@ -538,7 +538,7 @@ const jsonHandler: RequestHandler = async (req, res) => {
   }
 };
 
-app.post("/json", jsonHandler);
+app.post("/spec", jsonHandler);
 
 // Serve the main app for all other routes
 app.get("*", (req: Request, res: Response) => {
