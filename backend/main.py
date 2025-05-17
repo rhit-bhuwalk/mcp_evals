@@ -1,26 +1,134 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from config import settings
-from routers import api
+# backend/main.py
+import os, json, subprocess, tempfile, shutil, asyncio, time
+from pathlib import Path
+from uuid import uuid4
+from fastapi import FastAPI, HTTPException, BackgroundTasks
+from pydantic import BaseModel
+from typing import Optional
 
-app = FastAPI(title=settings.app_name)
+app = FastAPI(title="MCP-Eval")
 
-# Configure CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins
-    allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods
-    allow_headers=["*"],  # Allows all headers
-)
+# ──────────────────────────────────────────────────────────────────────────
+# ⬩ Request / response models
+# ──────────────────────────────────────────────────────────────────────────
+class EvalRequest(BaseModel):
+    install_cmd: str 
+    package_name: str
+    start_cmd: Optional[str] = None  # e.g. "node build/cli.js --port 3333"
+    port: int | None = 3333
+    spec_url: Optional[str] = None
+    auth_env: Optional[str] = None
+  
 
-# Include routers
-app.include_router(api.router, prefix=settings.api_prefix)
+class EvalResponse(BaseModel):
+    job_id: str
+    score: dict      
 
-@app.get("/")
-async def root():
-    return {"message": f"Welcome to {settings.app_name}"}
+# ──────────────────────────────────────────────────────────────────────────
+# ⬩ Helper runners  (super-naïve for hackathon)
+# ──────────────────────────────────────────────────────────────────────────
+def run_security_scan(src: Path) -> int:
+    """Language-agnostic security score 0-100."""
+    crit = 0
 
-@app.get("/health")
-async def health_check():
-    return {"status": "healthy"} 
+    # 1) Semgrep for TS/JS/Py   (fast, multi-lang)
+    sem_json = src / "semgrep.json"
+    subprocess.run(
+        f"semgrep scan --config p/ci {src} --json --output {sem_json}",
+        shell=True, check=False
+    )
+    if sem_json.exists():
+        sem = json.loads(sem_json.read_text())
+        crit += sum(1 for r in sem.get("results", [])
+                    if r["severity"] in {"ERROR", "WARNING"})
+
+    # 2) Bandit only if we actually saw .py files
+    if any(p.suffix == ".py" for p in src.rglob("*.py")):
+        bandit_json = src / "bandit.json"
+        subprocess.run(
+            f"bandit -r {src} -f json -o {bandit_json} -q",
+            shell=True, check=False
+        )
+        if bandit_json.exists():
+            issues = json.loads(bandit_json.read_text())["results"]
+            crit += sum(1 for i in issues if i["issue_severity"] == "HIGH")
+
+    # 3) npm-audit if package.json exists
+    if (src / "package.json").exists():
+        audit = subprocess.run(
+            "npm audit --production --json",
+            shell=True, cwd=src, capture_output=True, text=True
+        )
+        if audit.stdout:
+            vulns = json.loads(audit.stdout).get("metadata", {}).get("vulnerabilities", {})
+            crit += vulns.get("critical", 0) + vulns.get("high", 0)
+
+    return max(0, 100 - crit * 15)   # −15 pts per critical/high finding
+
+def run_spec_check(spec_url: str | None) -> int:
+    """Return dummy spec score."""
+    if not spec_url:
+        return 0
+    # TODO: call openapi-diff
+    return 90
+
+def run_runtime_test(port: int) -> int:
+    """Hit /list_tools and return 0-100."""
+    # TODO: use real MCP client; for now assume healthy.
+    return 95
+
+# ──────────────────────────────────────────────────────────────────────────
+# ⬩ Background evaluation task
+# ──────────────────────────────────────────────────────────────────────────
+def evaluate(req: EvalRequest, job_id: str, report_path: Path):
+    workdir = Path(tempfile.mkdtemp(prefix="mcp_"))
+    server  = None
+    try:
+        # 1. Download the package tarball
+        pkg = req.install_cmd.replace("npx ", "").strip()   # "mcp-fileserver@1.2.0" or "github:acme/repo"
+        subprocess.run(f"npm pack {pkg}", shell=True, check=True, cwd=workdir)
+        subprocess.run("tar -xzf *.tgz --strip-components=1", shell=True,
+                       check=True, cwd=workdir)
+        print("Package contents:")
+        for path in workdir.rglob("*"):
+            print("  ", path.relative_to(workdir))
+        print("─" * 40)
+        # 2. Start the server YOU control
+        start_cmd = req.start_cmd or f"node ./dist/index.js -p {req.port}"
+        server = subprocess.Popen(start_cmd, shell=True, cwd=workdir,
+                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        time.sleep(2) 
+
+        # 3. Scans (stubs)
+        security   = run_security_scan(workdir)
+        spec_score = run_spec_check(req.spec_url)
+        runtime    = run_runtime_test(req.port)
+
+        total = round(0.4*security + 0.3*spec_score + 0.3*runtime)
+        report_path.write_text(json.dumps(
+            dict(security=security, spec=spec_score,
+                 runtime=runtime, total=total), indent=2))
+
+    except Exception as e:
+        report_path.write_text(json.dumps({"error": str(e)}))
+    finally:
+        if server: server.terminate()
+        shutil.rmtree(workdir, ignore_errors=True)
+
+# ──────────────────────────────────────────────────────────────────────────
+# ⬩ API endpoint
+# ──────────────────────────────────────────────────────────────────────────
+
+
+@app.post("/eval", response_model=EvalResponse)
+async def start_eval(req: EvalRequest):
+    job_id  = uuid4().hex
+    report  = Path(f"./reports/{job_id}.json")
+    report.parent.mkdir(exist_ok=True)
+
+    # ⚡ run the evaluation right here (blocking)
+    evaluate(req, job_id, report)
+
+    # read the result and send it back
+    score = json.loads(report.read_text())
+    return EvalResponse(job_id=job_id, score=score)
