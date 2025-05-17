@@ -12,6 +12,8 @@ from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+from typing import Optional
+from fastapi.middleware.cors import CORSMiddleware
 from typing import List
 
 import anthropic  # pip install anthropic
@@ -21,6 +23,15 @@ from config import settings
 dotenv.load_dotenv()
 
 app = FastAPI(title="MCP-Eval")
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ──────────────────────────────────────────────────────────────────────────
 # ⬩ Request / response models
@@ -203,6 +214,8 @@ def evaluate(req: EvalRequest):
 
     return score, findings, summary
 
+# ──────────────────────────────────────────────────────────────────────────
+# ⬩ API endpoint
 # ──────────────────────────────────────────────────────────────────────────
 @app.post("/eval", response_model=EvalResponse)
 async def start_eval(req: EvalRequest):
