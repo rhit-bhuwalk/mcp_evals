@@ -10,6 +10,7 @@ import { Reporter } from "./reporter/Reporter";
 import { TesterConfig, TestResult } from "./types";
 import { spawn } from "child_process";
 import { writeFile, mkdir, readFile } from "fs/promises";
+import cors from "cors";
 
 // Load environment variables from .env file
 dotenv.config();
@@ -30,6 +31,14 @@ const DEFAULT_CONFIG = {
 
 const app = express();
 const port = process.env.PORT || 3000;
+
+// Add CORS middleware to allow requests from http://localhost:7153
+app.use(
+  cors({
+    origin: "http://localhost:7153",
+    credentials: true,
+  })
+);
 
 // Middleware for JSON parsing
 app.use(express.json());
@@ -305,6 +314,44 @@ app.post(
 );
 
 // API endpoint to execute a single tool
+app.post(
+  "/api/servers/:serverName/tools/:toolName/execute",
+  async (req: Request, res: Response) => {
+    let client: MCPClient | null = null;
+
+    try {
+      const { serverName, toolName } = req.params;
+      const inputs = req.body;
+
+      // Initialize client
+      client = new MCPClient();
+      console.log(`Connecting to MCP server: ${serverName}...`);
+      await client.connect(serverName);
+
+      // Execute the tool
+      const response = await client.executeTool(toolName, inputs);
+
+      return res.json({
+        status: "success",
+        serverName,
+        toolName,
+        inputs,
+        response,
+      });
+    } catch (error) {
+      console.error(`Error executing tool:`, error);
+      return res.status(500).json({
+        status: "error",
+        message: "Failed to execute tool",
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+    } finally {
+      if (client) {
+        await client.disconnect();
+      }
+    }
+  }
+);
 app.post(
   "/api/servers/:serverName/tools/:toolName/execute",
   async (req: Request, res: Response) => {

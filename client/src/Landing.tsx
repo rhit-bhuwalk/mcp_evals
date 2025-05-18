@@ -1,6 +1,6 @@
 import React, { useState } from "react";
-import api from "./lib/api";
-import { TestTubeDiagonal } from "lucide-react";
+import { kushApi, arianApi } from "./lib/api";
+import { File, TestTubeDiagonal } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -65,20 +65,68 @@ const Landing = () => {
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({
     package_name: "",
+    mcp_json: "",
   });
+  const [apiJsonFile, setApiJsonFile] = useState<File | null>(null);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setForm((prev) => ({
       ...prev,
-      [name]: name === "port" ? Number(value) : value,
+      [name]: value,
     }));
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setApiJsonFile(e.target.files[0]);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    const response = await api.post("/eval", form);
+    const formData = new FormData();
+    const response = await kushApi.post("/eval", {
+      package_name: form.package_name,
+    });
+
+    let specDataJson = null;
+    if (apiJsonFile) {
+      const fileText = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsText(apiJsonFile);
+      });
+      try {
+        specDataJson = JSON.parse(fileText);
+      } catch (err) {
+        alert("Uploaded file is not valid JSON.");
+        setLoading(false);
+        return;
+      }
+    }
+
+    let specConfigJson = {};
+    if (form.mcp_json && form.mcp_json.trim() !== "") {
+      try {
+        specConfigJson = JSON.parse(form.mcp_json.trim());
+      } catch (err) {
+        alert("MCP JSON is not valid JSON.");
+        setLoading(false);
+        return;
+      }
+    }
+
+    const spec = {
+      spec_name: form.package_name,
+      spec_data: specDataJson,
+      spec_config: specConfigJson,
+    };
+
+    const arianResponse = await arianApi.post("/spec", spec);
+    console.log(arianResponse);
     setLoading(false);
     navigate("/eval", {
       state: {
@@ -128,6 +176,43 @@ const Landing = () => {
               required
               variants={fieldVariants}
             />
+            <motion.input
+              type="text"
+              name="mcp_json"
+              placeholder="MCP JSON (string)"
+              className="p-2 text-lg w-3/4 min-w-[300px] border border-gray-300 rounded"
+              value={form.mcp_json}
+              onChange={handleChange}
+              // required
+              variants={fieldVariants}
+            />
+            <motion.div
+              className="w-3/4 min-w-[300px] flex flex-col items-start"
+              variants={fieldVariants}
+            >
+              <div className="relative w-full">
+                <input
+                  id="api_json_upload"
+                  type="file"
+                  name="api_json"
+                  accept="application/json"
+                  className="hidden"
+                  onChange={handleFileChange}
+                  // required
+                />
+                <label
+                  htmlFor="api_json_upload"
+                  className="cursor-pointer px-4 py-2 bg-purple-500 text-white rounded hover:bg-purple-600 transition-colors shadow text-center block w-full"
+                >
+                  {apiJsonFile ? "Change File" : "Upload API JSON"}
+                </label>
+                {apiJsonFile && (
+                  <span className="block mt-2 text-sm text-gray-600 truncate">
+                    {apiJsonFile.name}
+                  </span>
+                )}
+              </div>
+            </motion.div>
             <motion.button
               type="submit"
               className="items-center flex flex-row gap-2 px-4 py-2 bg-purple-500 text-white rounded hover:bg-purple-600 cursor-pointer"
