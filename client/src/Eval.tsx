@@ -1,8 +1,9 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import ScoreCard, { getScoreTextGradient } from "./components/ScoreCard";
 import { TestTubeDiagonal, TestTubeDiagonalIcon } from "lucide-react";
+import { arianApi } from "./lib/api";
 
 const getRating = (score: number) => {
   if (score >= 80) return "Great";
@@ -14,6 +15,7 @@ const Eval = () => {
   const { state: data } = useLocation();
   const navigate = useNavigate();
   const mcpName = data.package_name || "MCP";
+
   return (
     <div className="flex flex-col items-center justify-center min-h-screen space-y-8 w-full px-4 overflow-hidden">
       <h1 className="text-2xl font-bold mb-2">{mcpName}</h1>

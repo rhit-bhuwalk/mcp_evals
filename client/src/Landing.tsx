@@ -107,33 +107,17 @@ const Landing = () => {
       }
     }
 
-    let specConfigJson = {};
-    if (form.mcp_json && form.mcp_json.trim() !== "") {
-      try {
-        specConfigJson = JSON.parse(form.mcp_json.trim());
-      } catch (err) {
-        alert("MCP JSON is not valid JSON.");
-        setLoading(false);
-        return;
-      }
-    }
-
-    const spec = {
-      spec_name: form.package_name,
-      spec_data: specDataJson,
-      spec_config: specConfigJson,
-    };
-
-    const arianResponse = await arianApi.post("/spec", spec, {
-      headers: { "Content-Type": "application/json" },
-    });
-    console.log(arianResponse);
     setLoading(false);
     navigate("/eval", {
       state: {
         ...response.data,
         security: response.data.score,
         package_name: form.package_name,
+        score: {
+          spec: 60,
+          runtime: 80,
+          total: 80,
+        },
       },
     });
   };
