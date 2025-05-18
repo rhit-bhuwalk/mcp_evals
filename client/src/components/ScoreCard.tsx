@@ -4,19 +4,21 @@ import { Info } from "lucide-react";
 
 type Props = {
   title: string;
-  score: number;
+  score: number | string;
   fullWidth?: boolean;
   index?: number;
 };
 
 const scoreDescriptions: Record<string, string> = {
-  Security: "Security: Evaluates vulnerabilities and code safety.",
-  Spec: "Spec: Measures how well the implementation matches the provided spec.",
-  Runtime: "Runtime: Checks if the server runs and responds as expected.",
+  Security:
+    "Security: Assesses the MCP implementation for vulnerabilities and ensures the protocol is followed securely.",
+  Spec: "Spec: Measures how closely the MCP implementation adheres to the official Model Context Protocol specification.",
+  Runtime:
+    "Runtime: Evaluates the MCP server's ability to run, respond, and maintain protocol compliance during operation.",
 };
 
-export function getScoreTextGradient(score: number) {
-  if (score < 50) {
+export function getScoreTextGradient(score: number | string) {
+  if (typeof score !== "number" || score < 50) {
     // Red to orange-pink gradient
     return "bg-gradient-to-b from-[#FF3D3D] to-[#FFB88C] text-transparent bg-clip-text";
   } else if (score < 80) {

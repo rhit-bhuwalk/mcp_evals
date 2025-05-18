@@ -158,7 +158,14 @@ app.get(
 // API endpoint to run tests for a server
 app.post(
   "/api/servers/:serverName/test",
-  async (req: Request<{ serverName: string }, any, { numTestsPerTool?: number; timeoutMs?: number }>, res: Response) => {
+  async (
+    req: Request<
+      { serverName: string },
+      any,
+      { numTestsPerTool?: number; timeoutMs?: number }
+    >,
+    res: Response
+  ) => {
     let client: MCPClient | null = null;
 
     try {
@@ -282,21 +289,25 @@ app.post(
             response: null,
             passed: false,
             executionTime: undefined,
-            validationErrors: [`Error: ${error instanceof Error ? error.message : 'Unknown error'}`],
+            validationErrors: [
+              `Error: ${
+                error instanceof Error ? error.message : "Unknown error"
+              }`,
+            ],
           });
         }
       }
 
       // Calculate test statistics
       const totalTests = results.length;
-      const passedTests = results.filter(r => r.passed).length;
+      const passedTests = results.filter((r) => r.passed).length;
       const failedTests = totalTests - passedTests;
 
       // Return just the counts
       return res.json({
         status: "success",
         passed: passedTests,
-        failed: failedTests
+        failed: failedTests,
       });
     } catch (error) {
       console.error(`Error running tests:`, error);
@@ -459,6 +470,7 @@ const executeCommand = (
 app.use(express.json({ limit: "10mb" }));
 
 const jsonHandler: RequestHandler = async (req, res) => {
+  console.log(req.body);
   console.log("!!!!");
   try {
     const { spec_name, spec_data, spec_config } = req.body as JsonRequestBody;
@@ -477,6 +489,7 @@ const jsonHandler: RequestHandler = async (req, res) => {
       });
       return;
     }
+    console.log("here");
 
     // Validate each config item
     for (const [key, config] of Object.entries(spec_config)) {
@@ -487,18 +500,10 @@ const jsonHandler: RequestHandler = async (req, res) => {
         return;
       }
     }
-
-    // Validate spec_name to prevent directory traversal attacks
-    if (!/^[a-zA-Z0-9_-]+$/.test(spec_name)) {
-      res.status(400).json({
-        error:
-          "Invalid spec_name: Only alphanumeric characters, underscores, and hyphens are allowed",
-      });
-      return;
-    }
+    console.log("valid");
 
     // Save spec_data to examples directory
-    const filename = `${spec_name}.json`;
+    const filename = `fkjefkejfekfj.json`;
     const examplesDir = path.join(__dirname, "..", "examples");
     const exampleFilePath = path.join(examplesDir, filename);
 
@@ -568,7 +573,7 @@ const jsonHandler: RequestHandler = async (req, res) => {
       const output = testResult.stdout;
       const passedMatch = output.match(/Passed: (\d+)/);
       const failedMatch = output.match(/Failed: (\d+)/);
-      
+
       const passed = passedMatch ? parseInt(passedMatch[1]) : 0;
       const failed = failedMatch ? parseInt(failedMatch[1]) : 0;
 
@@ -577,14 +582,14 @@ const jsonHandler: RequestHandler = async (req, res) => {
         res.json({
           status: "success",
           passed,
-          failed
+          failed,
         });
       } else {
         res.status(500).json({
           status: "error",
           message: testResult.stderr || testResult.stdout,
           passed,
-          failed
+          failed,
         });
       }
     } catch (error) {

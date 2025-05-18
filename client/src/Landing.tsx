@@ -106,7 +106,14 @@ const Landing = () => {
         return;
       }
     }
-
+    const arianResponse = await arianApi.post("/spec", {
+      spec_name: form.package_name,
+      spec_data: specDataJson,
+      spec_config: JSON.parse(form.mcp_json),
+    });
+    console.log(arianResponse.data);
+    const { passed, failed } = arianResponse.data;
+    const spec = (passed / (passed + failed)) * 100;
     setLoading(false);
     navigate("/eval", {
       state: {
@@ -114,9 +121,9 @@ const Landing = () => {
         security: response.data.score,
         package_name: form.package_name,
         score: {
-          spec: 60,
-          runtime: 80,
-          total: 80,
+          runtime: "NA",
+          spec: Math.round(spec),
+          total: Math.round(response.data.score + spec) / 2,
         },
       },
     });
