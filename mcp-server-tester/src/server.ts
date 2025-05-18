@@ -145,7 +145,7 @@ app.get(
 // API endpoint to run tests for a server
 app.post(
   "/api/servers/:serverName/test",
-  async (req: Request, res: Response) => {
+  async (req: Request<{ serverName: string }, any, { numTestsPerTool?: number; timeoutMs?: number }>, res: Response) => {
     let client: MCPClient | null = null;
 
     try {
@@ -249,45 +249,41 @@ app.post(
           ]);
           const executionTime = Date.now() - startTime;
 
-          // Validate the response
+          // Validate response
           const validationResult = validator.validateResponse(
             response,
             testCase
           );
 
-          // Create test result
-          const testResult: TestResult = {
+          results.push({
             testCase,
-            passed: validationResult.valid,
             response,
+            passed: validationResult.valid,
             executionTime,
             validationErrors: validationResult.errors,
-          };
-
-          results.push(testResult);
-        } catch (error) {
-          // Handle test execution error
-          const errorMessage =
-            error instanceof Error ? error.message : "Unknown error";
-
-          const testResult: TestResult = {
+          });
+        } catch (error: unknown) {
+          console.error(`Error testing ${testCase.toolName}:`, error);
+          results.push({
             testCase,
+            response: null,
             passed: false,
-            validationErrors: [errorMessage],
-          };
-
-          results.push(testResult);
+            executionTime: undefined,
+            validationErrors: [`Error: ${error instanceof Error ? error.message : 'Unknown error'}`],
+          });
         }
       }
 
-      // Return results
+      // Calculate test statistics
+      const totalTests = results.length;
+      const passedTests = results.filter(r => r.passed).length;
+      const failedTests = totalTests - passedTests;
+
+      // Return just the counts
       return res.json({
         status: "success",
-        serverName,
-        testCount: results.length,
-        passCount: results.filter((r) => r.passed).length,
-        failCount: results.filter((r) => !r.passed).length,
-        results,
+        passed: passedTests,
+        failed: failedTests
       });
     } catch (error) {
       console.error(`Error running tests:`, error);
@@ -516,11 +512,28 @@ const jsonHandler: RequestHandler = async (req, res) => {
         mcpTesterDir
       );
 
-      // Return the test output directly
+      // Parse the test output to get pass/fail counts
+      const output = testResult.stdout;
+      const passedMatch = output.match(/Passed: (\d+)/);
+      const failedMatch = output.match(/Failed: (\d+)/);
+      
+      const passed = passedMatch ? parseInt(passedMatch[1]) : 0;
+      const failed = failedMatch ? parseInt(failedMatch[1]) : 0;
+
+      // Return just the counts
       if (testResult.code === 0) {
-        res.send(testResult.stdout);
+        res.json({
+          status: "success",
+          passed,
+          failed
+        });
       } else {
-        res.status(500).send(testResult.stderr || testResult.stdout);
+        res.status(500).json({
+          status: "error",
+          message: testResult.stderr || testResult.stdout,
+          passed,
+          failed
+        });
       }
     } catch (error) {
       console.error("Error executing commands:", error);
