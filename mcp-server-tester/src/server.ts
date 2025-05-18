@@ -32,10 +32,9 @@ const DEFAULT_CONFIG = {
 const app = express();
 const port = process.env.PORT || 3000;
 
-// Add CORS middleware to allow requests from http://localhost:7153
 app.use(
   cors({
-    origin: "http://localhost:7153",
+    origin: "http://localhost:5173",
     credentials: true,
   })
 );
@@ -67,6 +66,11 @@ function createTestConfig(fullConfig: any): TesterConfig {
         : DEFAULT_CONFIG.verbose,
   };
 }
+
+app.get("/", (req: Request, res: Response) => {
+  console.log("!!!!");
+  res.send("hello world");
+});
 
 // API endpoint to list available servers
 app.get("/api/servers", (req: Request, res: Response) => {
@@ -459,6 +463,7 @@ const executeCommand = (
 app.use(express.json({ limit: "10mb" }));
 
 const jsonHandler: RequestHandler = async (req, res) => {
+  console.log("!!!!");
   try {
     const { spec_name, spec_data, spec_config } = req.body as JsonRequestBody;
 

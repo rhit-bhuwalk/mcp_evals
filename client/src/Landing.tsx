@@ -86,7 +86,6 @@ const Landing = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    const formData = new FormData();
     const response = await kushApi.post("/eval", {
       package_name: form.package_name,
     });
@@ -125,7 +124,9 @@ const Landing = () => {
       spec_config: specConfigJson,
     };
 
-    const arianResponse = await arianApi.post("/spec", spec);
+    const arianResponse = await arianApi.post("/spec", spec, {
+      headers: { "Content-Type": "application/json" },
+    });
     console.log(arianResponse);
     setLoading(false);
     navigate("/eval", {
